@@ -1,0 +1,12 @@
+.nextflow*
+work/
+debug/
+singularity/
+*.html*
+metaanalysis_workflow_trace.txt*
+slurm*
+Liang_2013_ALSPAC_CAP_eur_GENCORD_GEUVADIS_GTEx_TwinsUK_CoLausR2_naive_LCL/
+Liang_2013_ALSPAC_CAP_eur_GENCORD_GEUVADIS_GTEx_TwinsUK_naive_LCL
+*.parquet
+testdata/
+data/
