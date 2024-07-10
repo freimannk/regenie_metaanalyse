@@ -17,7 +17,7 @@ parser.add_argument('-n', '--file_name', required=True, type=str,
 
 
 args = parser.parse_args()
-pq_table = pq.read_table(args.parquet , filters=[("log10p", ">=", args.logp_threshold)])
+pq_table = pq.read_table(args.parquet , filters=[("nlog10p", ">=", args.logp_threshold)])
 df = pq_table.to_pandas()
 
 if not df.empty:

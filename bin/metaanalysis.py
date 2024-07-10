@@ -22,6 +22,34 @@ parser.add_argument('-n', '--meta_study_name', required=True, type=str,
 
 args = parser.parse_args()
 
+def format_table(df):
+    df = df.reset_index()
+    df['chromosome'] = df.ID.str.extract(r'chr(\d+|X)_', expand=True).astype(str)
+    df['chromosome'] = df['chromosome'].replace(['X'], '23')
+    df['chromosome'] = df['chromosome'].astype(int)
+    df['position'] = df.ID.str.extract(r'_(\d+)_', expand=True).astype(int)
+    df['ref'] = df.ID.str.extract(r'_([ACGTN]+)_', expand=True).astype(str)
+    df['alt'] = df.ID.str.extract(r'_([ACGTN]+)$', expand=True).astype(str)
+    df = df.rename(columns={'phenotype_id': 'molecular_trait_id', 'pooled_effects': 'beta',"pooled_se":"se"})
+    df = df [["chromosome", "position","ref","alt","molecular_trait_id","beta","se","nlog10p","n_datasets","sample_size","ac"]]  # TODO:change!
+    return df
+
+def write_pq_file(df, file_name):
+    fields = [pa.field('chromosome', pa.int32()),
+    pa.field('position', pa.int32()),
+    pa.field('ref', pa.string()),
+    pa.field('alt', pa.string()),
+    pa.field('molecular_trait_id', pa.string()),
+    pa.field('beta', pa.float64()),
+    pa.field('se', pa.float64()),
+    pa.field('nlog10p', pa.float64()),
+    pa.field('n_datasets', pa.int32()),
+    pa.field('sample_size', pa.int32()),
+    pa.field('ac', pa.float64())]
+    my_schema = pa.schema(fields)
+    table = pa.Table.from_pandas(df, schema=my_schema)
+    pq.write_table(table, f'{file_name}_{phenotype_id}.parquet',compression='snappy')
+    
 
 def get_weight_array(b_se_array):
     get_w = lambda x: 1 / (x ** 2)
@@ -177,7 +205,16 @@ class MetaAnalysis:
         Z = np.divide(np.absolute((self._merged_dataset_df['pooled_effects']).to_numpy()), SE)
         pval = 2 * (norm.sf(abs(Z)))
         self._merged_dataset_df["p_value"] = pval
-        self._merged_dataset_df['log10p'] = - np.log10(self._merged_dataset_df['p_value'])
+        self._merged_dataset_df['nlog10p'] = - np.log10(self._merged_dataset_df['p_value'])
+
+
+    def _calculate_nlog10p(self):
+        effects = self._merged_dataset_df['pooled_effects'].to_numpy()
+        se = self._merged_dataset_df['pooled_se'].to_numpy()
+        Z = effects / se
+        log_p = norm.logsf(np.abs(Z))
+        log10p = -log_p / np.log(10)
+        self._merged_dataset_df["nlog10p"] = log10p
 
 
     def _get_statistic_df(self):
@@ -186,30 +223,33 @@ class MetaAnalysis:
         self._merged_dataset_df["pooled_effects"] = self._calculate_pooled_effects()
         self._merged_dataset_df["pooled_se"] = self._calculate_pooled_se()
         self._merged_dataset_df["phenotype_id"] = phenotype_id
-        self._calculate_p_values()
+        #self._calculate_p_values()
+        self._calculate_nlog10p()  
         self._find_missing_variants_count()
         self._calculate_sample_size()
         self._calculate_sample_AC()
         return self._merged_dataset_df[
-            ["phenotype_id", 'pooled_effects', 'pooled_se', 'log10p', 'datasets_with_variant', "N", "AC"]]
+            ["phenotype_id", 'pooled_effects', 'pooled_se', 'nlog10p', 'n_datasets', "sample_size", "ac"]]  # TODO: change!
 
     def _find_missing_variants_count(self):
-        self._merged_dataset_df["datasets_with_variant"] = self._merged_dataset_df.loc[:,
+        self._merged_dataset_df["n_datasets"] = self._merged_dataset_df.loc[:,
                                                            self._merged_dataset_df.columns.str.endswith(
                                                                '_b_se')].notnull().sum(axis=1)
 
     def analyze(self):
         calculated_df = self._get_statistic_df()
-        table = pa.Table.from_pandas(calculated_df)
-        pq.write_table(table, f'{self._meta_study_name}_{phenotype_id}.parquet')
+        calculated_table_df = format_table(calculated_df)
+        write_pq_file(calculated_table_df,self._meta_study_name)
+        #table = pa.Table.from_pandas(calculated_df)
+        #pq.write_table(table, f'{self._meta_study_name}_{phenotype_id}.parquet')
 
     def _calculate_sample_size(self):
-        self._merged_dataset_df["N"] = self._merged_dataset_df.loc[:,
+        self._merged_dataset_df["sample_size"] = self._merged_dataset_df.loc[:,
                                        self._merged_dataset_df.columns.str.endswith(
                                            '_N')].sum(axis=1)
 
     def _calculate_sample_AC(self):
-        self._merged_dataset_df["AC"] = self._merged_dataset_df.loc[:,
+        self._merged_dataset_df["ac"] = self._merged_dataset_df.loc[:,
                                         self._merged_dataset_df.columns.str.endswith(
                                             '_ac')].sum(axis=1)
 
